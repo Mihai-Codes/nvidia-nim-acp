@@ -32,7 +32,7 @@ Repository = "https://github.com/Mihai-Codes/nvidia-nim-acp"
 Issues = "https://github.com/Mihai-Codes/nvidia-nim-acp/issues"
 
 [project.scripts]
-nvidia-nim-acp = "nvidia_nim_acp:main"
+nvidia-nim-acp = "nvidia_nim_acp:cli_main"
 
 [tool.uv]
 dev-dependencies = []

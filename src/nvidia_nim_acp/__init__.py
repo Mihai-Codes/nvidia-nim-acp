@@ -3,6 +3,7 @@
 NVIDIA NIM ACP Client
 Wraps NVIDIA NIM API calls for use with ACP-compatible terminals like Toad.
 """
+
 import asyncio
 import json
 import os
@@ -67,8 +68,13 @@ async def main():
             print(json.dumps({"type": "error", "error": str(e)}), flush=True)
 
 
-if __name__ == "__main__":
+def cli_main():
+    """Entry point for CLI."""
     if not API_KEY:
         print("Error: NVIDIA_API_KEY environment variable not set", file=sys.stderr)
         sys.exit(1)
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli_main()
