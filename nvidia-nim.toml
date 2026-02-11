@@ -1,0 +1,46 @@
+# NVIDIA NIM ACP Client for Toad
+# Fork this repo: https://github.com/batrachianai/toad
+
+identity = "nvidia-nim"
+name = "NVIDIA NIM (Kimi K2.5)"
+short_name = "nvidia-nim"
+url = "https://build.nvidia.com/"
+protocol = "acp"
+author_name = "NVIDIA"
+author_url = "https://nvidia.com/"
+publisher_name = "Community"
+publisher_url = "https://github.com/mihai"
+type = "coding"
+description = """
+Use Kimi K2.5 and other models via NVIDIA NIM API.
+Sign up at https://build.nvidia.com/settings/api-keys for free API key.
+"""
+tags = ["coding", "llm", "nvidia", "kimi"]
+
+run_command."*" = "nvidia-nim-acp"
+
+help = '''
+# NVIDIA NIM (Kimi K2.5)
+
+Use Kimi K2.5 and other models via NVIDIA NIM API.
+
+## Setup
+
+1. Get a free API key from [NVIDIA Build](https://build.nvidia.com/settings/api-keys)
+2. Set the environment variable:
+   ```bash
+   export NVIDIA_API_KEY=nvapi-xxxxx
+   ```
+
+## Models
+
+- Kimi K2.5 (moonshotai/kimi-k2.5) - Best for coding
+- Kimi K2 (moonshotai/kimi-k2)
+- Kimi K2 Thinking (moonshotai/kimi-k2-thinking)
+- And many other models...
+
+'''
+
+[actions."*".install]
+command = """git clone https://github.com/mihai/nvidia-nim-acp.git && cd nvidia-nim-acp && uv pip install -e ."""
+description = "Install NVIDIA NIM ACP Client"

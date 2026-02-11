@@ -1,0 +1,9 @@
+[project]
+name = "nvidia-nim-acp"
+version = "0.1.0"
+description = "NVIDIA NIM ACP Client"
+requires-python = ">=3.14"
+dependencies = [
+    "acp>=0.1.0",
+    "httpx>=0.27.0",
+]
