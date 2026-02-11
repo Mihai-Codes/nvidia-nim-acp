@@ -8,9 +8,6 @@ import asyncio
 import json
 import os
 import sys
-from typing import Any
-
-import httpx
 
 API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -18,8 +15,10 @@ BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 async def chat_complete(
     messages: list[dict[str, str]], model: str = "moonshotai/kimi-k2.5"
-) -> dict[str, Any]:
+) -> dict:
     """Call NVIDIA NIM chat completion API."""
+    import httpx
+
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": model,
@@ -36,7 +35,7 @@ async def chat_complete(
         return response.json()
 
 
-def format_response(data: dict) -> dict[str, Any]:
+def format_response(data: dict) -> dict:
     """Format API response for ACP."""
     choice = data["choices"][0]
     return {
@@ -46,34 +45,21 @@ def format_response(data: dict) -> dict[str, Any]:
     }
 
 
-async def handle_stdin(stdin: asyncio.StreamReader) -> dict | None:
-    """Read a JSON line from stdin."""
-    line = await stdin.readline()
-    if not line:
-        return None
-    try:
-        return json.loads(line.decode("utf-8"))
-    except json.JSONDecodeError:
-        return None
+def send_response(response: dict) -> None:
+    """Send JSON response to stdout."""
+    sys.stdout.write(json.dumps(response) + "\n")
+    sys.stdout.flush()
 
 
-async def write_stdout(stdout: asyncio.StreamWriter, message: dict) -> None:
-    """Write a JSON message to stdout."""
-    data = json.dumps(message) + "\n"
-    stdout.write(data.encode("utf-8"))
-    await stdout.drain()
+def send_error(request_id, message: str) -> None:
+    """Send error response."""
+    send_response({"id": request_id, "error": {"code": -32000, "message": message}})
 
 
-async def handle_request(
-    request: dict, stdin: asyncio.StreamReader, stdout: asyncio.StreamWriter
-) -> bool:
-    """Handle a JSON-RPC request and send response. Returns False to stop."""
-    request_id = request.get("id")
-    method = request.get("method")
-    params = request.get("params", {})
-
-    if method == "initialize":
-        response = {
+async def handle_initialize(request_id: int) -> None:
+    """Handle initialize request."""
+    send_response(
+        {
             "id": request_id,
             "result": {
                 "protocolVersion": 1,
@@ -94,26 +80,28 @@ async def handle_request(
                 "serverInfo": {"name": "nvidia-nim-acp", "version": "0.1.0"},
             },
         }
-        await write_stdout(stdout, response)
-        return True
+    )
 
-    elif method == "session/new":
-        response = {"id": request_id, "result": {"sessionId": "session-1"}}
-        await write_stdout(stdout, response)
-        return True
 
-    elif method == "session/prompt":
-        content_blocks = params.get("prompt", [])
-        messages = []
-        for block in content_blocks:
-            if block.get("type") == "text":
-                messages.append({"role": "user", "content": block.get("text", "")})
+async def handle_session_new(request_id: int) -> None:
+    """Handle session/new request."""
+    send_response({"id": request_id, "result": {"sessionId": "session-1"}})
 
-        if messages:
-            try:
-                result = await asyncio.wait_for(chat_complete(messages), timeout=300.0)
-                response_data = format_response(result)
-                response = {
+
+async def handle_session_prompt(request_id: int, params: dict) -> None:
+    """Handle session/prompt request."""
+    content_blocks = params.get("prompt", [])
+    messages = []
+    for block in content_blocks:
+        if block.get("type") == "text":
+            messages.append({"role": "user", "content": block.get("text", "")})
+
+    if messages:
+        try:
+            result = await asyncio.wait_for(chat_complete(messages), timeout=300.0)
+            response_data = format_response(result)
+            send_response(
+                {
                     "id": request_id,
                     "result": {
                         "completion": {
@@ -126,53 +114,60 @@ async def handle_request(
                         }
                     },
                 }
-            except asyncio.TimeoutError:
-                response = {
-                    "id": request_id,
-                    "error": {"code": -32000, "message": "NVIDIA API timeout"},
-                }
-            except Exception as e:
-                response = {
-                    "id": request_id,
-                    "error": {"code": -32000, "message": str(e)},
-                }
-        else:
-            response = {
+            )
+        except asyncio.TimeoutError:
+            send_error(request_id, "NVIDIA API timeout")
+        except Exception as e:
+            send_error(request_id, str(e))
+    else:
+        send_response(
+            {
                 "id": request_id,
                 "result": {"completion": {"content": [{"type": "text", "text": ""}]}},
             }
+        )
 
-        await write_stdout(stdout, response)
-        return True
 
-    elif method == "session/end":
-        response = {"id": request_id, "result": {}}
-        await write_stdout(stdout, response)
-        return False
-
-    else:
-        response = {
-            "id": request_id,
-            "error": {"code": -32601, "message": f"Method not found: {method}"},
-        }
-        await write_stdout(stdout, response)
-        return True
+async def handle_session_end(request_id: int) -> None:
+    """Handle session/end request."""
+    send_response({"id": request_id, "result": {}})
 
 
 async def main():
     """Main ACP client loop."""
-    stdin = asyncio.StreamReader()
-    stdout = asyncio.StreamWriter(sys.stdout.buffer, {}, None, asyncio.get_event_loop())
+    reader = asyncio.StreamReader()
 
-    await stdin.readline()
+    await reader.readline()
 
     while True:
-        request = await handle_stdin(stdin)
-        if request is None:
-            break
+        try:
+            line = await reader.readline()
+            if not line:
+                break
 
-        should_continue = await handle_request(request, stdin, stdout)
-        if not should_continue:
+            try:
+                request = json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError:
+                continue
+
+            request_id = request.get("id")
+            method = request.get("method")
+            params = request.get("params", {})
+
+            if method == "initialize":
+                await handle_initialize(request_id)
+            elif method == "session/new":
+                await handle_session_new(request_id)
+            elif method == "session/prompt":
+                await handle_session_prompt(request_id, params)
+            elif method == "session/end":
+                await handle_session_end(request_id)
+                break
+            else:
+                send_error(request_id, f"Method not found: {method}")
+
+        except Exception as e:
+            sys.stderr.write(f"Error: {e}\n")
             break
 
 
