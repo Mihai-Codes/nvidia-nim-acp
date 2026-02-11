@@ -13,7 +13,7 @@ BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
 def chat_complete(
-    messages: list[dict[str, str]], model: str = "moonshotai/kimi-k2.5"
+    messages: list[dict[str, str]], model: str = "meta/llama-3.1-70b-instruct"
 ) -> dict:
     """Call NVIDIA NIM chat completion API."""
     import httpx
@@ -134,7 +134,7 @@ def handle_session_prompt(request_id, params) -> None:
         )
 
 
-async def chat_complete_async(messages, model="moonshotai/kimi-k2.5"):
+async def chat_complete_async(messages, model="meta/llama-3.1-70b-instruct"):
     """Async version of chat_complete."""
     import httpx
 
