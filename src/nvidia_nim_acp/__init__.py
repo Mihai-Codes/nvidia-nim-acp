@@ -172,7 +172,7 @@ def main():
             break
 
         try:
-            request = json.loads(line.decode("utf-8"))
+            request = json.loads(line)
         except json.JSONDecodeError:
             continue
 
