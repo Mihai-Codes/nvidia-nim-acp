@@ -9,19 +9,33 @@ import os
 import sys
 import threading
 
-API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 BASE_URL = "https://integrate.api.nvidia.com/v1"
+DEFAULT_MODEL = "deepseek-ai/deepseek-v3.2"
 
 
-def chat_complete(
-    messages: list[dict[str, str]], model: str = "deepseek-ai/deepseek-v3.2"
-) -> dict:
+def get_model() -> str:
+    """Get model from environment variable or use default."""
+    return os.environ.get("NVIDIA_MODEL", DEFAULT_MODEL)
+
+
+def get_api_key() -> str:
+    """Get API key from environment variable."""
+    return os.environ.get("NVIDIA_API_KEY", "")
+
+
+def chat_complete(messages: list[dict[str, str]], model: str | None = None) -> dict:
     """Call NVIDIA NIM chat completion API."""
     import httpx
 
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    api_key = get_api_key()
+    if not api_key:
+        raise ValueError("NVIDIA_API_KEY environment variable not set")
+
+    model_id = model or get_model()
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
-        "model": model,
+        "model": model_id,
         "messages": messages,
         "max_tokens": 32768,
         "temperature": 1.0,
