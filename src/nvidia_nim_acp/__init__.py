@@ -10,7 +10,7 @@ import os
 import sys
 from typing import Optional
 import httpx
-from acp import ACPClient, run_agent
+from acp import Agent, Client, run_agent
 
 # Configuration
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
@@ -67,7 +67,7 @@ async def handle_request():
     agent = NVIDIANIMAgent()
 
     # Run ACP client
-    client = ACPClient(agent=agent, agent_name="nvidia-nim", agent_version="0.1.0")
+    client = Client(agent=agent, agent_name="nvidia-nim", agent_version="0.1.0")
 
     await client.run()
 
