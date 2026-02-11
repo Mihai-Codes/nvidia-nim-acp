@@ -195,3 +195,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def cli_main():
+    """Entry point for CLI (alias for main)."""
+    main()
