@@ -56,7 +56,7 @@ def send_error(request_id, message: str) -> None:
     send_response({"id": request_id, "error": {"code": -32000, "message": message}})
 
 
-async def handle_initialize(request_id: int) -> None:
+async def handle_initialize(request_id) -> None:
     """Handle initialize request."""
     send_response(
         {
@@ -83,12 +83,12 @@ async def handle_initialize(request_id: int) -> None:
     )
 
 
-async def handle_session_new(request_id: int) -> None:
+async def handle_session_new(request_id) -> None:
     """Handle session/new request."""
     send_response({"id": request_id, "result": {"sessionId": "session-1"}})
 
 
-async def handle_session_prompt(request_id: int, params: dict) -> None:
+async def handle_session_prompt(request_id, params) -> None:
     """Handle session/prompt request."""
     content_blocks = params.get("prompt", [])
     messages = []
@@ -128,46 +128,55 @@ async def handle_session_prompt(request_id: int, params: dict) -> None:
         )
 
 
-async def handle_session_end(request_id: int) -> None:
+async def handle_session_end(request_id) -> None:
     """Handle session/end request."""
     send_response({"id": request_id, "result": {}})
 
 
+async def handle_request(request) -> bool:
+    """Handle a single request. Returns False to stop."""
+    request_id = request.get("id")
+    method = request.get("method")
+    params = request.get("params", {})
+
+    if method == "initialize":
+        await handle_initialize(request_id)
+    elif method == "session/new":
+        await handle_session_new(request_id)
+    elif method == "session/prompt":
+        await handle_session_prompt(request_id, params)
+    elif method == "session/end":
+        await handle_session_end(request_id)
+        return False
+    else:
+        send_error(request_id, f"Method not found: {method}")
+
+    return True
+
+
+async def read_stdin():
+    """Read a line from stdin using asyncio."""
+    loop = asyncio.get_event_loop()
+    line = await loop.run_in_executor(None, sys.stdin.readline)
+    return line
+
+
 async def main():
     """Main ACP client loop."""
-    reader = asyncio.StreamReader()
-
-    await reader.readline()
+    await read_stdin()  # Skip the first readline (Toad sends a blank line first)
 
     while True:
+        line = await read_stdin()
+        if not line:
+            break
+
         try:
-            line = await reader.readline()
-            if not line:
-                break
+            request = json.loads(line.decode("utf-8"))
+        except json.JSONDecodeError:
+            continue
 
-            try:
-                request = json.loads(line.decode("utf-8"))
-            except json.JSONDecodeError:
-                continue
-
-            request_id = request.get("id")
-            method = request.get("method")
-            params = request.get("params", {})
-
-            if method == "initialize":
-                await handle_initialize(request_id)
-            elif method == "session/new":
-                await handle_session_new(request_id)
-            elif method == "session/prompt":
-                await handle_session_prompt(request_id, params)
-            elif method == "session/end":
-                await handle_session_end(request_id)
-                break
-            else:
-                send_error(request_id, f"Method not found: {method}")
-
-        except Exception as e:
-            sys.stderr.write(f"Error: {e}\n")
+        should_continue = await handle_request(request)
+        if not should_continue:
             break
 
 
