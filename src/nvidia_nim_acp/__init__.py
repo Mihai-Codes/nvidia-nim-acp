@@ -57,6 +57,17 @@ async def main():
             request = json.loads(line)
             request_type = request.get("type")
             if request_type == "prompt":
+                if not API_KEY:
+                    print(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "error": "NVIDIA_API_KEY environment variable not set. Get a free API key from https://build.nvidia.com/settings/api-keys",
+                            }
+                        ),
+                        flush=True,
+                    )
+                    continue
                 messages = request.get("messages", [])
                 model = request.get("model", "moonshotai/kimi-k2.5")
                 try:
@@ -87,9 +98,6 @@ async def main():
 
 def cli_main():
     """Entry point for CLI."""
-    if not API_KEY:
-        print("Error: NVIDIA_API_KEY environment variable not set", file=sys.stderr)
-        sys.exit(1)
     asyncio.run(main())
 
 
