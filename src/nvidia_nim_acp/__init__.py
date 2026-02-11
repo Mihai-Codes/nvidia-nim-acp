@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 NVIDIA NIM ACP Client
-Wraps NVIDIA NIM API calls for use with ACP-compatible terminals like Toad.
+Implements the Agent Client Protocol (ACP) for Toad integration.
 """
 
 import asyncio
@@ -36,7 +36,7 @@ async def chat_complete(
         return response.json()
 
 
-def format_response(data: dict) -> dict:
+def format_response(data: dict) -> dict[str, Any]:
     """Format API response for ACP."""
     choice = data["choices"][0]
     return {
@@ -46,54 +46,141 @@ def format_response(data: dict) -> dict:
     }
 
 
+async def handle_request(
+    request: dict, stdin: asyncio.StreamReader, stdout: asyncio.StreamWriter
+) -> None:
+    """Handle a JSON-RPC request and send response."""
+    request_id = request.get("id")
+    method = request.get("method")
+    params = request.get("params", {})
+
+    if method == "initialize":
+        response = {
+            "id": request_id,
+            "result": {
+                "protocolVersion": 1,
+                "capabilities": {
+                    "prompts": {"listChanged": False},
+                    "resources": {"listChanged": False, "subscribe": False},
+                    "tools": {"listChanged": False},
+                    "env": True,
+                    "status": {"reporting": "full"},
+                    "sessions": True,
+                    "notifications": {
+                        "taskStarted": True,
+                        "taskCompleted": True,
+                        "taskError": True,
+                        "console": True,
+                    },
+                },
+                "serverInfo": {"name": "nvidia-nim-acp", "version": "0.1.0"},
+            },
+        }
+        response_json = json.dumps(response) + "\n"
+        stdout.write(response_json.encode("utf-8"))
+        await stdout.drain()
+        return True
+
+    elif method == "session/new":
+        response = {"id": request_id, "result": {"sessionId": "session-1"}}
+        response_json = json.dumps(response) + "\n"
+        stdout.write(response_json.encode("utf-8"))
+        await stdout.drain()
+        return True
+
+    elif method == "session/prompt":
+        content_blocks = params.get("prompt", [])
+        messages = []
+        for block in content_blocks:
+            if block.get("type") == "text":
+                text = block.get("text", "")
+                messages.append({"role": "user", "content": text})
+            elif block.get("type") == "reasoning":
+                text = block.get("reasoning", "")
+                messages.append({"role": "user", "content": f"[Reasoning]: {text}"})
+
+        if messages:
+            try:
+                result = await asyncio.wait_for(chat_complete(messages), timeout=300.0)
+                response_data = format_response(result)
+                response = {
+                    "id": request_id,
+                    "result": {
+                        "completion": {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": response_data.get("content", ""),
+                                }
+                            ]
+                        }
+                    },
+                }
+            except asyncio.TimeoutError:
+                response = {
+                    "id": request_id,
+                    "error": {
+                        "code": -32000,
+                        "message": "NVIDIA API timeout. Model may be overloaded.",
+                    },
+                }
+            except Exception as e:
+                response = {
+                    "id": request_id,
+                    "error": {"code": -32000, "message": str(e)},
+                }
+        else:
+            response = {
+                "id": request_id,
+                "result": {"completion": {"content": [{"type": "text", "text": ""}]}},
+            }
+
+        response_json = json.dumps(response) + "\n"
+        stdout.write(response_json.encode("utf-8"))
+        await stdout.drain()
+        return True
+
+    elif method == "session/end":
+        response = {"id": request_id, "result": {}}
+        response_json = json.dumps(response) + "\n"
+        stdout.write(response_json.encode("utf-8"))
+        await stdout.drain()
+        return False
+
+    else:
+        response = {
+            "id": request_id,
+            "error": {"code": -32601, "message": f"Method not found: {method}"},
+        }
+        response_json = json.dumps(response) + "\n"
+        stdout.write(response_json.encode("utf-8"))
+        await stdout.drain()
+        return True
+
+
 async def main():
     """Main ACP client loop."""
-    print(json.dumps({"type": "ready"}), flush=True)
+    stdin = asyncio.StreamReader()
+    stdout = asyncio.StreamWriter(sys.stdout.buffer, {}, None, asyncio.get_event_loop())
+
     while True:
         try:
-            line = sys.stdin.readline()
+            line = await stdin.readline()
             if not line:
                 break
-            request = json.loads(line)
-            request_type = request.get("type")
-            if request_type == "prompt":
-                if not API_KEY:
-                    print(
-                        json.dumps(
-                            {
-                                "type": "error",
-                                "error": "NVIDIA_API_KEY environment variable not set. Get a free API key from https://build.nvidia.com/settings/api-keys",
-                            }
-                        ),
-                        flush=True,
-                    )
-                    continue
-                messages = request.get("messages", [])
-                model = request.get("model", "moonshotai/kimi-k2.5")
-                try:
-                    result = await asyncio.wait_for(
-                        chat_complete(messages, model), timeout=300.0
-                    )
-                    response = format_response(result)
-                    print(
-                        json.dumps({"type": "message", "message": response}), flush=True
-                    )
-                except asyncio.TimeoutError:
-                    print(
-                        json.dumps(
-                            {
-                                "type": "error",
-                                "error": "NVIDIA API timeout. Model may be overloaded. Try again later or use a different model.",
-                            }
-                        ),
-                        flush=True,
-                    )
-                except Exception as e:
-                    print(json.dumps({"type": "error", "error": str(e)}), flush=True)
-            elif request_type == "close":
+
+            try:
+                request = json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError:
+                continue
+
+            should_continue = await handle_request(request, stdin, stdout)
+            if not should_continue:
                 break
+
         except Exception as e:
-            print(json.dumps({"type": "error", "error": str(e)}), flush=True)
+            sys.stderr.write(f"Error: {e}\n")
+            break
 
 
 def cli_main():
