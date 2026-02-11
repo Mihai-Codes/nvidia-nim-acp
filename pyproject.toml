@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Software Development :: User Interfaces",
 ]
 dependencies = [
-    "acp>=0.1.0",
+    "agent-client-protocol>=0.1.0",
     "httpx>=0.27.0",
 ]
 
