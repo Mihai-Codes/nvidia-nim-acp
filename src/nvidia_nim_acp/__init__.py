@@ -26,7 +26,7 @@ def chat_complete(
         "temperature": 1.0,
         "stream": False,
     }
-    with httpx.AsyncClient(timeout=300.0) as client:
+    with httpx.AsyncClient(timeout=600.0) as client:
         response = client.post(
             f"{BASE_URL}/chat/completions", headers=headers, json=payload
         )
