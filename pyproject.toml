@@ -33,6 +33,7 @@ Issues = "https://github.com/Mihai-Codes/nvidia-nim-acp/issues"
 
 [project.scripts]
 nvidia-nim-acp = "nvidia_nim_acp:cli_main"
+nvidia-nim-launcher = "nvidia_nim_acp.launcher:main"
 
 [tool.uv]
 dev-dependencies = []
