@@ -28,7 +28,7 @@ async def chat_complete(
         "temperature": 1.0,
         "stream": False,
     }
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         response = await client.post(
             f"{BASE_URL}/chat/completions", headers=headers, json=payload
         )
@@ -59,9 +59,26 @@ async def main():
             if request_type == "prompt":
                 messages = request.get("messages", [])
                 model = request.get("model", "moonshotai/kimi-k2.5")
-                result = await chat_complete(messages, model)
-                response = format_response(result)
-                print(json.dumps({"type": "message", "message": response}), flush=True)
+                try:
+                    result = await asyncio.wait_for(
+                        chat_complete(messages, model), timeout=300.0
+                    )
+                    response = format_response(result)
+                    print(
+                        json.dumps({"type": "message", "message": response}), flush=True
+                    )
+                except asyncio.TimeoutError:
+                    print(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "error": "NVIDIA API timeout. Model may be overloaded. Try again later or use a different model.",
+                            }
+                        ),
+                        flush=True,
+                    )
+                except Exception as e:
+                    print(json.dumps({"type": "error", "error": str(e)}), flush=True)
             elif request_type == "close":
                 break
         except Exception as e:
