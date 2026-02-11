@@ -3,7 +3,7 @@
 NVIDIA NIM Model Launcher
 Launches nvidia-nim-acp with a specific model preset.
 Usage: nvidia-nim-launcher <model-name>
-Models: kimi, deepseek, glm, mimo, qwen, r1, coder
+Models: kimi, kimi-thinking, deepseek, r1, coder, qwen
 """
 
 import os
@@ -11,12 +11,12 @@ import sys
 
 MODEL_MAP = {
     "kimi": "moonshotai/kimi-k2.5",
+    "kimi-thinking": "moonshotai/kimi-k2-thinking",
     "deepseek": "deepseek-ai/deepseek-v3.2",
-    "glm": "z-ai/glm-4-7",
-    "mimo": "xiaomi/mimo-v2-flash",
-    "qwen": "qwen/qwen3-coder-plus",
+    "glm": "z-ai/glm4.7",
     "r1": "deepseek-ai/deepseek-r1-distill-qwen-32b",
     "coder": "deepseek-ai/deepseek-coder-6.7b-instruct",
+    "qwen": "qwen/qwen2.5-coder-32b-instruct",
 }
 
 
