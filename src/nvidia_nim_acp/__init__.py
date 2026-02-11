@@ -4,7 +4,6 @@ NVIDIA NIM ACP Client
 Implements the Agent Client Protocol (ACP) for Toad integration.
 """
 
-import asyncio
 import json
 import os
 import sys
@@ -13,7 +12,7 @@ API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
-async def chat_complete(
+def chat_complete(
     messages: list[dict[str, str]], model: str = "moonshotai/kimi-k2.5"
 ) -> dict:
     """Call NVIDIA NIM chat completion API."""
@@ -27,8 +26,8 @@ async def chat_complete(
         "temperature": 1.0,
         "stream": False,
     }
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        response = await client.post(
+    with httpx.AsyncClient(timeout=300.0) as client:
+        response = client.post(
             f"{BASE_URL}/chat/completions", headers=headers, json=payload
         )
         response.raise_for_status()
@@ -56,7 +55,7 @@ def send_error(request_id, message: str) -> None:
     send_response({"id": request_id, "error": {"code": -32000, "message": message}})
 
 
-async def handle_initialize(request_id) -> None:
+def handle_initialize(request_id) -> None:
     """Handle initialize request."""
     send_response(
         {
@@ -83,13 +82,15 @@ async def handle_initialize(request_id) -> None:
     )
 
 
-async def handle_session_new(request_id) -> None:
+def handle_session_new(request_id) -> None:
     """Handle session/new request."""
     send_response({"id": request_id, "result": {"sessionId": "session-1"}})
 
 
-async def handle_session_prompt(request_id, params) -> None:
+def handle_session_prompt(request_id, params) -> None:
     """Handle session/prompt request."""
+    import asyncio
+
     content_blocks = params.get("prompt", [])
     messages = []
     for block in content_blocks:
@@ -98,7 +99,12 @@ async def handle_session_prompt(request_id, params) -> None:
 
     if messages:
         try:
-            result = await asyncio.wait_for(chat_complete(messages), timeout=300.0)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                asyncio.wait_for(chat_complete_async(messages), timeout=300.0)
+            )
+            loop.close()
             response_data = format_response(result)
             send_response(
                 {
@@ -128,45 +134,40 @@ async def handle_session_prompt(request_id, params) -> None:
         )
 
 
-async def handle_session_end(request_id) -> None:
+async def chat_complete_async(messages, model="moonshotai/kimi-k2.5"):
+    """Async version of chat_complete."""
+    import httpx
+
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 32768,
+        "temperature": 1.0,
+        "stream": False,
+    }
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        response = await client.post(
+            f"{BASE_URL}/chat/completions", headers=headers, json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+def handle_session_end(request_id) -> None:
     """Handle session/end request."""
     send_response({"id": request_id, "result": {}})
 
 
-async def handle_request(request) -> bool:
-    """Handle a single request. Returns False to stop."""
-    request_id = request.get("id")
-    method = request.get("method")
-    params = request.get("params", {})
-
-    if method == "initialize":
-        await handle_initialize(request_id)
-    elif method == "session/new":
-        await handle_session_new(request_id)
-    elif method == "session/prompt":
-        await handle_session_prompt(request_id, params)
-    elif method == "session/end":
-        await handle_session_end(request_id)
-        return False
-    else:
-        send_error(request_id, f"Method not found: {method}")
-
-    return True
-
-
-async def read_stdin():
-    """Read a line from stdin using asyncio."""
-    loop = asyncio.get_event_loop()
-    line = await loop.run_in_executor(None, sys.stdin.readline)
-    return line
-
-
-async def main():
+def main():
     """Main ACP client loop."""
-    await read_stdin()  # Skip the first readline (Toad sends a blank line first)
+    import asyncio
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     while True:
-        line = await read_stdin()
+        line = sys.stdin.readline()
         if not line:
             break
 
@@ -175,15 +176,22 @@ async def main():
         except json.JSONDecodeError:
             continue
 
-        should_continue = await handle_request(request)
-        if not should_continue:
+        request_id = request.get("id")
+        method = request.get("method")
+        params = request.get("params", {})
+
+        if method == "initialize":
+            handle_initialize(request_id)
+        elif method == "session/new":
+            handle_session_new(request_id)
+        elif method == "session/prompt":
+            handle_session_prompt(request_id, params)
+        elif method == "session/end":
+            handle_session_end(request_id)
             break
-
-
-def cli_main():
-    """Entry point for CLI."""
-    asyncio.run(main())
+        else:
+            send_error(request_id, f"Method not found: {method}")
 
 
 if __name__ == "__main__":
-    cli_main()
+    main()
