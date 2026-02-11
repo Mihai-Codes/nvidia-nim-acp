@@ -7,6 +7,7 @@ Implements the Agent Client Protocol (ACP) for Toad integration.
 import json
 import os
 import sys
+import threading
 
 API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -26,7 +27,7 @@ def chat_complete(
         "temperature": 1.0,
         "stream": False,
     }
-    with httpx.AsyncClient(timeout=600.0) as client:
+    with httpx.Client(timeout=300.0) as client:
         response = client.post(
             f"{BASE_URL}/chat/completions", headers=headers, json=payload
         )
@@ -89,8 +90,6 @@ def handle_session_new(request_id) -> None:
 
 def handle_session_prompt(request_id, params) -> None:
     """Handle session/prompt request."""
-    import asyncio
-
     content_blocks = params.get("prompt", [])
     messages = []
     for block in content_blocks:
@@ -99,12 +98,7 @@ def handle_session_prompt(request_id, params) -> None:
 
     if messages:
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(
-                asyncio.wait_for(chat_complete_async(messages), timeout=300.0)
-            )
-            loop.close()
+            result = chat_complete(messages)
             response_data = format_response(result)
             send_response(
                 {
@@ -121,8 +115,6 @@ def handle_session_prompt(request_id, params) -> None:
                     },
                 }
             )
-        except asyncio.TimeoutError:
-            send_error(request_id, "NVIDIA API timeout")
         except Exception as e:
             send_error(request_id, str(e))
     else:
@@ -134,28 +126,6 @@ def handle_session_prompt(request_id, params) -> None:
         )
 
 
-async def chat_complete_async(
-    messages, model="deepseek-ai/deepseek-coder-6.7b-instruct"
-):
-    """Async version of chat_complete."""
-    import httpx
-
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": 32768,
-        "temperature": 1.0,
-        "stream": False,
-    }
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        response = await client.post(
-            f"{BASE_URL}/chat/completions", headers=headers, json=payload
-        )
-        response.raise_for_status()
-        return response.json()
-
-
 def handle_session_end(request_id) -> None:
     """Handle session/end request."""
     send_response({"id": request_id, "result": {}})
@@ -163,11 +133,6 @@ def handle_session_end(request_id) -> None:
 
 def main():
     """Main ACP client loop."""
-    import asyncio
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
     while True:
         line = sys.stdin.readline()
         if not line:
