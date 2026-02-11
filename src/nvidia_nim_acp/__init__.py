@@ -46,10 +46,28 @@ def format_response(data: dict) -> dict[str, Any]:
     }
 
 
+async def handle_stdin(stdin: asyncio.StreamReader) -> dict | None:
+    """Read a JSON line from stdin."""
+    line = await stdin.readline()
+    if not line:
+        return None
+    try:
+        return json.loads(line.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+async def write_stdout(stdout: asyncio.StreamWriter, message: dict) -> None:
+    """Write a JSON message to stdout."""
+    data = json.dumps(message) + "\n"
+    stdout.write(data.encode("utf-8"))
+    await stdout.drain()
+
+
 async def handle_request(
     request: dict, stdin: asyncio.StreamReader, stdout: asyncio.StreamWriter
-) -> None:
-    """Handle a JSON-RPC request and send response."""
+) -> bool:
+    """Handle a JSON-RPC request and send response. Returns False to stop."""
     request_id = request.get("id")
     method = request.get("method")
     params = request.get("params", {})
@@ -76,16 +94,12 @@ async def handle_request(
                 "serverInfo": {"name": "nvidia-nim-acp", "version": "0.1.0"},
             },
         }
-        response_json = json.dumps(response) + "\n"
-        stdout.write(response_json.encode("utf-8"))
-        await stdout.drain()
+        await write_stdout(stdout, response)
         return True
 
     elif method == "session/new":
         response = {"id": request_id, "result": {"sessionId": "session-1"}}
-        response_json = json.dumps(response) + "\n"
-        stdout.write(response_json.encode("utf-8"))
-        await stdout.drain()
+        await write_stdout(stdout, response)
         return True
 
     elif method == "session/prompt":
@@ -93,11 +107,7 @@ async def handle_request(
         messages = []
         for block in content_blocks:
             if block.get("type") == "text":
-                text = block.get("text", "")
-                messages.append({"role": "user", "content": text})
-            elif block.get("type") == "reasoning":
-                text = block.get("reasoning", "")
-                messages.append({"role": "user", "content": f"[Reasoning]: {text}"})
+                messages.append({"role": "user", "content": block.get("text", "")})
 
         if messages:
             try:
@@ -119,10 +129,7 @@ async def handle_request(
             except asyncio.TimeoutError:
                 response = {
                     "id": request_id,
-                    "error": {
-                        "code": -32000,
-                        "message": "NVIDIA API timeout. Model may be overloaded.",
-                    },
+                    "error": {"code": -32000, "message": "NVIDIA API timeout"},
                 }
             except Exception as e:
                 response = {
@@ -135,16 +142,12 @@ async def handle_request(
                 "result": {"completion": {"content": [{"type": "text", "text": ""}]}},
             }
 
-        response_json = json.dumps(response) + "\n"
-        stdout.write(response_json.encode("utf-8"))
-        await stdout.drain()
+        await write_stdout(stdout, response)
         return True
 
     elif method == "session/end":
         response = {"id": request_id, "result": {}}
-        response_json = json.dumps(response) + "\n"
-        stdout.write(response_json.encode("utf-8"))
-        await stdout.drain()
+        await write_stdout(stdout, response)
         return False
 
     else:
@@ -152,9 +155,7 @@ async def handle_request(
             "id": request_id,
             "error": {"code": -32601, "message": f"Method not found: {method}"},
         }
-        response_json = json.dumps(response) + "\n"
-        stdout.write(response_json.encode("utf-8"))
-        await stdout.drain()
+        await write_stdout(stdout, response)
         return True
 
 
@@ -163,23 +164,15 @@ async def main():
     stdin = asyncio.StreamReader()
     stdout = asyncio.StreamWriter(sys.stdout.buffer, {}, None, asyncio.get_event_loop())
 
+    await stdin.readline()
+
     while True:
-        try:
-            line = await stdin.readline()
-            if not line:
-                break
+        request = await handle_stdin(stdin)
+        if request is None:
+            break
 
-            try:
-                request = json.loads(line.decode("utf-8"))
-            except json.JSONDecodeError:
-                continue
-
-            should_continue = await handle_request(request, stdin, stdout)
-            if not should_continue:
-                break
-
-        except Exception as e:
-            sys.stderr.write(f"Error: {e}\n")
+        should_continue = await handle_request(request, stdin, stdout)
+        if not should_continue:
             break
 
 
