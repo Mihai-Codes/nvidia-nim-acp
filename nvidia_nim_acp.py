@@ -55,7 +55,6 @@ def format_response(data: dict) -> dict:
 
 async def main():
     """Main ACP client loop."""
-    import sys
 
     print(json.dumps({"type": "ready"}), flush=True)
 
