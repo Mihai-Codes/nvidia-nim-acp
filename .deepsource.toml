@@ -1,0 +1,17 @@
+version = 1
+
+[[analyzers]]
+name = "python"
+enabled = true
+
+  [analyzers.meta]
+  runtime_version = "3.x"
+
+[[exclude_patterns]]
+pattern = ".venv/**"
+
+[[exclude_patterns]]
+pattern = "__pycache__/**"
+
+[[exclude_patterns]]
+pattern = "*.lock"
