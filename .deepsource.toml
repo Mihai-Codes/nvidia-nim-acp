@@ -15,3 +15,5 @@ pattern = "__pycache__/**"
 
 [[exclude_patterns]]
 pattern = "*.lock"
+
+# Trigger DeepSource re-analysis
